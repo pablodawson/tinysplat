@@ -87,7 +87,7 @@ class Dataset:
                 f_y=f_y,
                 fov_x=fov_x,
                 fov_y=fov_y,
-                quat=torch.as_tensor(img.qvec),
+                quat=torch.as_tensor(img.cam_from_world.rotation.quat),
                 near=0.001,
                 far=1000,
                 image=image,

@@ -70,7 +70,7 @@ class GaussianRasterizer:
         view_matrix = camera.view_matrix.to(self.device)
         proj_matrix = camera.proj_matrix.to(self.device)
         scales = torch.exp(model.scales)
-        return [model.means, scales, global_scale, model.quats / model.quats.norm(dim=-1, keepdim=True), view_matrix[:3,:], proj_matrix @ view_matrix, camera.f_x, camera.f_y, c_x, c_y, img_height, img_width, self.tile_bounds(dims)]
+        return [model.means, scales, global_scale, model.quats / model.quats.norm(dim=-1, keepdim=True), view_matrix[:3,:], proj_matrix @ view_matrix, camera.f_x, camera.f_y, c_x, c_y, img_height, img_width, 8]
 
     def spherical_harmonics_inputs(self, camera):
         n_coeffs = num_sh_bases(self.model.active_sh_degree)
