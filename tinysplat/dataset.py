@@ -14,7 +14,9 @@ class Dataset:
     def __init__(self,
         colmap_path: str,
         images_path: str,
+        frames_path: str,
         max_image_dimension: int = 512,
+        reference_cam_name: str = "cam00",
         device = "cuda:0",
     ):
         """Load a dataset from a COLMAP reconstruction."""
@@ -94,13 +96,41 @@ class Dataset:
                 visible_point_ids=visible_point_ids,
                 name=image_name,
                 device=device)
+            
+            if image_name == reference_cam_name:
+                self.reference_cam = camera
+                cam_matrix_ref = cam_matrix
+                k_params_ref = k_params
+                new_cam_matrix_ref = new_cam_matrix
+            
             self.cameras.append(camera)
+
+        
+        self.frame_cams = []
+
+        # Construct cameras for video frames 
+        for frame in os.listdir(frames_path):
+            camera = self.reference_cam
+            
+            image_path = os.path.join(frames_path, frame)
+            image_name = frame
+            image = Image.open(image_path)
+            image = cv2.undistort(np.array(image), cam_matrix_ref, k_params_ref, None, new_cam_matrix_ref)
+            x, y, w, h = roi
+            image = image[y:y+h, x:x+w]
+            image = Image.fromarray(image)
+
+            camera.image = image
+            camera.name = frame
+
+            self.frame_cams.append(camera)
+
 
         # Compute camera extent
         cam_positions = np.hstack([cam.position for cam in self.cameras])
         mean_position = np.mean(cam_positions)
         self.spatial_extent = np.max(np.linalg.norm(cam_positions - mean_position, axis=0)) * 1.1
-
+        
         # Construct point cloud
         self.pcd = PointCloud(
             point_ids=torch.as_tensor(

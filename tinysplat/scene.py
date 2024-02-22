@@ -166,11 +166,13 @@ class Camera:
 
 
 class Scene:
-    def __init__(self, cameras, model, rasterizer):
+    def __init__(self, cameras, frames_cameras, reference_cam, model, rasterizer):
         rng = np.random.default_rng()
         self.model = model
         self.rasterizer = rasterizer
         self.cameras = cameras
+        self.frames_cameras = frames_cameras
+        self.reference_cam = reference_cam
         self.camera_training_idxs = rng.permutation(len(self.cameras))
         self.current_camera_idx = 0
 

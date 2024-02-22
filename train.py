@@ -17,8 +17,75 @@ from tinysplat.rasterize import GaussianRasterizer
 from tinysplat.scene import Scene
 from tinysplat.viewer import Viewer
 
+from gaussian_to_unity.converter import get_order
+
 #append the parent path to sys.path
 sys.path.append('..')
+
+
+async def deform(
+        model: GaussianModel,
+        scene: Scene,
+        args,
+        device = "cuda"
+):
+    # 1- Create chunks
+    xyz = model.means
+    
+    # 1.1 Morton reorder
+    order = get_order(xyz)
+    xyz_sorted = xyz[order].copy()
+    
+    tracking_points = []
+    chunks_3dpoints = []
+    chunks_2dpoints = []
+
+    chunk_count = (xyz.shape[0]+args.chunk_size-1) // args.chunk_size
+
+   # 1.2 assign a screenspace and world position for each chunk
+    for i in range(chunk_count):
+        start = i*args.chunk_size
+
+        chunk_visible = True # TODO: Check if chunk is visible, then it can be tracked
+
+        if (chunk_visible):
+            chunk_means = xyz_sorted[(start):(start+args.chunk_size)]
+            chunk_point3D = np.mean(chunk_means, axis=0)
+            chunk_point2D = scene.reference_cam.project_points(chunk_point3D[None])[0]
+
+            tracking_points.append([0, chunk_point2D[0], chunk_point2D[1]])
+            chunks_2dpoints.append(chunk_point2D)
+            chunks_3dpoints.append(chunk_point3D)
+
+    # 2. Track all points
+    cotracker = torch.hub.load("facebookresearch/co-tracker", "cotracker2").to(device)
+    
+    video_frames = [frame.image for frame in scene.frames_cameras]
+
+    pred_tracks, _ = cotracker(video_frames, queries=tracking_points[None])
+
+    # 3. For each frame:
+    # Iterate for each chunk
+    # Backproject their positions with their depth map
+    # -> Obtain position delta from the reference camera
+
+    deltas = []
+
+    for idx, frame_camera in tqdm(enumerate(scene.frames_cameras)):
+        depth = frame_camera.get_estimated_depth()
+        frame_tracks = pred_tracks[idx]
+
+        x, y = frame_tracks[i]
+        p_3d = torch.stack([x, y, depth], dim=-1)
+        p_world = frame_camera.backproject_points(p_3d)
+        
+        # Delta
+        delta_pos = xyz_sorted - p_world
+
+        deltas.append(delta_pos)
+    
+    # Rasterize with deltas
+    
 
 async def train(
     model: GaussianModel,
@@ -162,6 +229,7 @@ def arg_parser():
     parser = ArgumentParser(description='Configuration parameters')
     parser.add_argument('--device', type=str, default='cuda:0')
     parser.add_argument('--train', action=BooleanOptionalAction)
+    parser.add_argument('--deform', action=BooleanOptionalAction)
     parser.add_argument('--viewer', type=bool, default=True)
     parser.add_argument('--load-checkpoint', type=str)
     parser.add_argument('--save-checkpoints', action=BooleanOptionalAction)
@@ -240,6 +308,11 @@ def arg_parser():
     parser_surface.add_argument('--regularize-density-start', type=int, default=9000)
     parser_surface.add_argument('--regularize-density-end', type=int, default=15000)
 
+    # Deformation
+    parser_dataset.add_argument('--frames-path', type=str, default='frames')
+    parser_dataset.add_argument('--chunk-size', type=int, default=256)
+    parser_dataset.add_argument('--refcam', type=int, default=0)
+
     return parser
 
 
@@ -253,12 +326,16 @@ async def main():
     args.colmap_path = f'{args.dataset_dir}/{args.colmap_path}'
     args.images_path = f'{args.dataset_dir}/{args.images_path}'
     args.depths_path = f'{args.dataset_dir}/{args.depths_path}'
+    args.frames_path = f'{args.dataset_dir}/{args.frames_path}'
+
     coroutines = []
 
     device = torch.device(args.device)
     dataset = Dataset(
         colmap_path=args.colmap_path,
         images_path=args.images_path,
+        frames_path=args.frames_path,
+        reference_cam_name=args.refcam,
         device=device)
 
     if filepath := args.load_checkpoint:
@@ -271,7 +348,7 @@ async def main():
             dataset.pcd,
             **vars(args)).to(device)
     rasterizer = GaussianRasterizer(model, dataset.cameras, device=device)
-    scene = Scene(dataset.cameras, model, rasterizer)
+    scene = Scene(dataset.cameras, dataset.frame_cams, dataset.reference_cam, model, rasterizer)
     model.interval_densify = len(scene.cameras)
     
     if args.viewer:
@@ -284,6 +361,9 @@ async def main():
 
     if args.train:
         coroutines.append(train(model, scene, args))
+    
+    if args.deform:
+        coroutines.append(deform(model,scene,args))
 
     await asyncio.gather(*coroutines)
 

@@ -15,17 +15,26 @@ class DepthEstimator:
 
         # Load depth estimates if they already exist
         stored_depths = dict()
+        stored_frames_depths = dict()
+
         dir_name = kwargs['depths_path']
+        frames_dir_name = kwargs['frames_path']
         
-        if not os.path.exists(dir_name):
-            os.makedirs(dir_name)
-        elif os.path.exists(dir_name):
+        os.makedirs(dir_name, exist_ok=True)
+        os.makedirs(frames_dir_name, exist_ok=True)
+
+        if os.path.exists(dir_name):
             for file_name in tqdm(os.listdir(dir_name)):
                 if file_name.endswith('.npy'):
                     stored_depths[file_name[:-4]] = np.load(os.path.join(dir_name, file_name), allow_pickle=True)
 
+        if os.path.exists(frames_dir_name):
+            for file_name in tqdm(os.listdir(frames_dir_name)):
+                if file_name.endswith('.npy'):
+                    stored_frames_depths[file_name[:-4]] = np.load(os.path.join(frames_dir_name, file_name), allow_pickle=True)
+        
         # Load the model if not all images have been processed
-        if len(stored_depths) < len(scene.cameras) or load_model:
+        if len(stored_depths) < len(scene.cameras) or load_model or len(stored_frames_depths) < len(scene.frames_cameras):
             self.load_model(kwargs['depth_model'])
 
         if skip_init: return
@@ -38,6 +47,16 @@ class DepthEstimator:
                 depth = self.estimate(camera, dataset)
                 camera.estimated_depth = depth
                 np.save(os.path.join(dir_name, camera.name + '.npy'), depth)
+        
+        for camera in tqdm(scene.frames_cameras):
+            depth = stored_frames_depths.get(camera.name)
+            if depth is not None:
+                camera.estimated_depth = depth
+            else:
+                depth = self.estimate(camera, dataset)
+                camera.estimated_depth = depth
+                np.save(os.path.join(frames_dir_name, camera.name + '.npy'), depth)
+    
 
     def load_model(self, depth_model="depth_anything"):
         if depth_model == "midas":
