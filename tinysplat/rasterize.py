@@ -29,7 +29,7 @@ class GaussianRasterizer:
 
         # 1. Project 3D gaussians to 2D using EWA splatting method
         inputs = self.project_forward_inputs(camera, dims)
-        xys, depths, radii, conics, num_tiles, _ = project_gaussians(*inputs)
+        xys, depths, radii, conics, _, num_tiles, _ = project_gaussians(*inputs)
         if xys.requires_grad != False:
             xys.retain_grad()
 
@@ -41,13 +41,13 @@ class GaussianRasterizer:
         # 3. Rasterize rgbs
         inputs = self.rasterize_forward_inputs(
             xys, depths, radii, conics, num_tiles, rgbs, dims)
-        rgbs, _ = rasterize_gaussians(*inputs)
+        rgbs = rasterize_gaussians(*inputs)
         rgbs = torch.clamp(rgbs, max=1.0)
 
         # 4. Rasterize depths
         inputs = self.rasterize_forward_inputs(
             xys, depths, radii, conics, num_tiles, depths[:, None].repeat(1, 3), dims)
-        depths, _ = rasterize_gaussians(*inputs)
+        depths = rasterize_gaussians(*inputs)
         depths = depths[:,:,0]
 
         extras = {
@@ -83,7 +83,7 @@ class GaussianRasterizer:
     def rasterize_forward_inputs(self, xys, depths, radii, conics, num_tiles, rgbs, dims):
         model = self.model
         img_width, img_height = dims
-        return [xys, depths, radii, conics, num_tiles, rgbs, torch.sigmoid(model.opacities), img_height, img_width, model.background]
+        return [xys, depths, radii, conics, num_tiles, rgbs, torch.sigmoid(model.opacities), img_height, img_width, 8, model.background]
 
     def tile_bounds(self, dims: Tuple[int, int]):
         img_width, img_height = dims
