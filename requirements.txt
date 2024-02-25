@@ -10,3 +10,4 @@ plyfile
 torchmetrics
 transformers
 websockets
+ffmpeg-python
