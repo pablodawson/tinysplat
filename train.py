@@ -5,8 +5,6 @@ from collections import defaultdict
 
 import torch
 import torch.optim as optim
-from torch.utils.data import DataLoader
-from torchmetrics.image import PeakSignalNoiseRatio, StructuralSimilarityIndexMeasure
 import numpy as np
 from tqdm import tqdm
 
